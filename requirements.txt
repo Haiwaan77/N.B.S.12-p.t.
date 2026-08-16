@@ -1,4 +1,5 @@
+smartapi-python
 pandas
 numpy
-yfinance
 pytz
+requests
