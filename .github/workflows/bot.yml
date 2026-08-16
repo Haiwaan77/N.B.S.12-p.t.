@@ -14,8 +14,9 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install git+https://github.com/angel-one/smartapi-python.git
+          pip install smartapi-python
           pip install pandas numpy pytz requests
+          python -c "import smartapi; print('SmartAPI imported successfully:', smartapi.__version__)"
       - name: Run bot
         env:
           ANGEL_API_KEY: ${{ secrets.ANGEL_API_KEY }}
