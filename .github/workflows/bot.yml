@@ -1,0 +1,26 @@
+name: Real Option Chain Paper Trading Bot
+
+on:
+  schedule:
+    - cron: '*/5 3-9 * * 1-5'   # सोम-शुक्र, UTC 3:00-9:55 (IST 8:30-15:25)
+  workflow_dispatch:            # मैन्युअल चलाने के लिए
+
+jobs:
+  run-bot:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+      - name: Install dependencies
+        run: |
+          pip install --upgrade pip
+          pip install smartapi-python pandas numpy pytz requests
+      - name: Run bot
+        env:
+          ANGEL_API_KEY: ${{ secrets.ANGEL_API_KEY }}
+          ANGEL_CLIENT_ID: ${{ secrets.ANGEL_CLIENT_ID }}
+          ANGEL_PASSWORD: ${{ secrets.ANGEL_PASSWORD }}
+          ANGEL_TOKEN: ${{ secrets.ANGEL_TOKEN }}
+        run: python paper_trading.py
