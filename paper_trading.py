@@ -5,7 +5,10 @@ import numpy as np
 import time
 from datetime import datetime, timedelta
 import pytz
-from smartapi import SmartConnect
+try:
+    from SmartApi import SmartConnect
+except ImportError:
+    from smartapi import SmartConnect
 from calendar import monthrange, THURSDAY
 import math
 
