@@ -19,10 +19,10 @@ def angel_login():
     api_key = os.environ.get('ANGEL_API_KEY')
     client_id = os.environ.get('ANGEL_CLIENT_ID')
     password = os.environ.get('ANGEL_PASSWORD')
-    token = os.environ.get('ANGEL_TOKEN')
+    totp = ""   # 2FA बंद है, इसलिए खाली
 
     obj = SmartConnect(api_key=api_key)
-    data = obj.generateSession(client_id, password, token)
+    data = obj.generateSession(client_id, password, totp)
     if data.get('status'):
         jwt_token = data['data']['jwtToken']
         refresh_token = data['data']['refreshToken']
