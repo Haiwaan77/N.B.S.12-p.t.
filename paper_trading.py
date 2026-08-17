@@ -19,7 +19,11 @@ def angel_login():
     api_key = os.environ.get('ANGEL_API_KEY')
     client_id = os.environ.get('ANGEL_CLIENT_ID')
     password = os.environ.get('ANGEL_PASSWORD')
-    totp = ""   # 2FA बंद है, इसलिए खाली
+    totp_secret = os.environ.get('ANGEL_TOTP_SECRET')
+    if totp_secret:
+        totp = pyotp.TOTP(totp_secret).now()
+    else:
+        totp = ""
 
     obj = SmartConnect(api_key=api_key)
     data = obj.generateSession(client_id, password, totp)
