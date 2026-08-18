@@ -36,3 +36,4 @@ jobs:
           git add report.html trades.json open_positions.json
           git commit -m "Update report and trade history" || echo "No changes to commit"
           git push
+  
