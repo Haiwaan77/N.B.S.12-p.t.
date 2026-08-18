@@ -6,3 +6,4 @@ requests
 logzero
 pyotp
 yfinance
+websocket-client
