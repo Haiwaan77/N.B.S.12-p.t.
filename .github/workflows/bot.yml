@@ -18,9 +18,14 @@ jobs:
           python -m pip install --upgrade pip
           pip install smartapi-python pandas numpy pytz requests logzero pyotp yfinance websocket-client
       - name: Run bot
-            - name: Generate Report
+        env:
+          ANGEL_API_KEY: ${{ secrets.ANGEL_API_KEY }}
+          ANGEL_CLIENT_ID: ${{ secrets.ANGEL_CLIENT_ID }}
+          ANGEL_PASSWORD: ${{ secrets.ANGEL_PASSWORD }}
+          ANGEL_TOTP_SECRET: ${{ secrets.ANGEL_TOTP_SECRET }}
+        run: python paper_trading.py
+      - name: Generate Report
         run: python report.py
-
       - name: Commit and push report and trades
         run: |
           git config --global user.name 'github-actions[bot]'
@@ -28,9 +33,3 @@ jobs:
           git add report.html trades.json open_positions.json
           git commit -m "Update report and trade history" || echo "No changes to commit"
           git push
-        env:
-          ANGEL_API_KEY: ${{ secrets.ANGEL_API_KEY }}
-          ANGEL_CLIENT_ID: ${{ secrets.ANGEL_CLIENT_ID }}
-          ANGEL_PASSWORD: ${{ secrets.ANGEL_PASSWORD }}
-          ANGEL_TOTP_SECRET: ${{ secrets.ANGEL_TOTP_SECRET }}
-        run: python paper_trading.py
