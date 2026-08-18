@@ -95,12 +95,10 @@ def get_atm_strike(spot, step=50):
 
 # ---------- ऑप्शन सिंबल बनाना ----------
 def get_option_symbol(expiry_date_str, strike, opt_type):
-    # expiry_date_str जैसे '28-Aug-2026' -> '26AUG28'
     try:
         dt_obj = datetime.strptime(expiry_date_str, "%d-%b-%Y")
         exp_format = dt_obj.strftime("%y%m%d")
     except Exception:
-        # अगर पहले से ही '26AUG28' जैसा है तो use करें
         exp_format = expiry_date_str
     return f"NIFTY{exp_format}{strike}{opt_type}"
 
@@ -122,7 +120,6 @@ def run_bot():
 
     now = datetime.now(IST)
 
-    # पुरानी स्थितियाँ लोड करें
     try:
         with open('trades.json') as f:
             trades = json.load(f)
@@ -178,7 +175,7 @@ def run_bot():
                 days_until_thu = 7
             expiry_dt = now + timedelta(days=days_until_thu)
             expiry_date_str = expiry_dt.strftime("%d-%b-%Y")
-        else:  # monthly
+        else:
             y, m = now.year, now.month
             last = monthrange(y, m)[1]
             d = datetime(y, m, last)
@@ -196,7 +193,7 @@ def run_bot():
                     d -= timedelta(days=1)
             expiry_date_str = d.strftime("%d-%b-%Y")
 
-        # क्या इस रणनीति की कोई खुली पोज़ीशन है?
+        # खुली पोज़ीशन
         open_pos = None
         for pos in open_positions:
             if pos['strategy'] == name:
@@ -216,6 +213,7 @@ def run_bot():
 
             exit_triggered = False
             exit_reason = ''
+            sl_type = None
 
             # समय-सीमा एग्जिट
             if exit_mode == 'intraday':
@@ -229,7 +227,7 @@ def run_bot():
                     exit_triggered = True
                     exit_reason = f'{exit_mode.capitalize()} Exit'
 
-            # MACD विपरीत क्रॉस (केवल डेली SMA)
+            # MACD विपरीत क्रॉस
             if not exit_triggered and use_macd_exit:
                 if len(df) >= 2:
                     last_cross_down = bool(df['cross_down'].iloc[-2])
@@ -265,9 +263,11 @@ def run_bot():
                 if open_pos['type'] == 'CALL' and spot <= open_pos['sl']:
                     exit_triggered = True
                     exit_reason = 'SL Hit'
+                    sl_type = 'trailing' if open_pos['trail_active'] else 'initial'
                 elif open_pos['type'] == 'PUT' and spot >= open_pos['sl']:
                     exit_triggered = True
                     exit_reason = 'SL Hit'
+                    sl_type = 'trailing' if open_pos['trail_active'] else 'initial'
 
             if exit_triggered:
                 pnl = (exit_premium - open_pos['entry_premium']) * lot_size
@@ -280,10 +280,11 @@ def run_bot():
                     'entry_premium': open_pos['entry_premium'],
                     'exit_premium': exit_premium,
                     'exit_reason': exit_reason,
+                    'sl_type': sl_type if sl_type else 'N/A',
                     'pnl': round(pnl, 2)
                 })
                 open_positions = [p for p in open_positions if p['strategy'] != name]
-                print(f"{name}: {exit_reason} | P&L: {pnl:.2f}")
+                print(f"{name}: {exit_reason} ({sl_type}) | P&L: {pnl:.2f}")
         else:
             # ---------- नया सिग्नल ----------
             if len(df) >= 3:
@@ -322,7 +323,6 @@ def run_bot():
                     })
                     print(f"{name}: Entered {trade_type} at premium {entry_premium}, SL: {sl}")
 
-    # फाइलें सेव करें
     with open('trades.json', 'w') as f:
         json.dump(trades, f, indent=2)
     with open('open_positions.json', 'w') as f:
