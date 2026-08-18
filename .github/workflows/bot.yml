@@ -2,7 +2,7 @@ name: Angel One Paper Trading Bot
 
 on:
   schedule:
-    - cron: '*/5 3-9 * * 1-5'
+    - cron: '*/5 0-23 * * 1-5'
   workflow_dispatch:
 
 permissions:
