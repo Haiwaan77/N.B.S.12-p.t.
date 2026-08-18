@@ -1,127 +1,44 @@
 import os
 import json
 import math
-from datetime import datetime, timedelta, time as dt_time
-from calendar import monthrange, THURSDAY
 import pytz
 import pandas as pd
 import numpy as np
 import yfinance as yf
-import requests
+import pyotp
+from datetime import datetime, timedelta
+from calendar import monthrange, THURSDAY
+from smartapi import SmartConnect
 
 IST = pytz.timezone('Asia/Kolkata')
 
-# ---------- NSE Option Chain via CORS Proxy ----------
-def get_nse_chain():
-    nse_url = "https://www.nseindia.com/api/option-chain-indices?symbol=NIFTY"
-    proxies = [
-        f"https://api.allorigins.win/raw?url={nse_url}",
-        f"https://corsproxy.io/?url={nse_url}",
-        f"https://thingproxy.freeboard.io/fetch/{nse_url}"
-    ]
-    headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-        "Accept": "application/json, text/plain, */*",
-    }
+# ---------- Angel One Login ----------
+def angel_login():
+    api_key = os.environ.get('ANGEL_API_KEY')
+    client_id = os.environ.get('ANGEL_CLIENT_ID')
+    password = os.environ.get('ANGEL_PASSWORD')
+    totp_secret = os.environ.get('ANGEL_TOTP_SECRET', '')
 
-    for proxy_url in proxies:
-        try:
-            r = requests.get(proxy_url, headers=headers, timeout=15)
-            if r.status_code == 200:
-                data = r.json()
-                if data and 'records' in data:
-                    return data
-                else:
-                    print(f"Proxy {proxy_url} returned invalid data")
-            else:
-                print(f"Proxy {proxy_url} status: {r.status_code}")
-        except Exception as e:
-            print(f"Proxy {proxy_url} error: {e}")
+    obj = SmartConnect(api_key=api_key)
+    totp = pyotp.TOTP(totp_secret).now() if totp_secret else ""
+    data = obj.generateSession(client_id, password, totp)
+    if data.get('status'):
+        return obj, data['data']['jwtToken']
+    else:
+        raise Exception("Angel Login Failed")
+
+# ---------- yfinance से स्पॉट और कैंडल्स ----------
+def get_spot():
+    try:
+        df = yf.download('^NSEI', period='1d', interval='1m', auto_adjust=True, progress=False)
+        if not df.empty:
+            if isinstance(df.columns, pd.MultiIndex):
+                df.columns = df.columns.get_level_values(0)
+            return float(df['Close'].iloc[-1])
+    except Exception as e:
+        print(f"Spot error: {e}")
     return None
 
-def get_spot_from_chain(chain):
-    try:
-        return float(chain['records']['underlyingValue'])
-    except Exception:
-        return None
-
-def get_atm_strike(spot, step=50):
-    return int(round(spot / step) * step)
-
-def parse_expiry_date(date_str):
-    try:
-        return datetime.strptime(date_str, "%d-%b-%Y").date()
-    except Exception:
-        return None
-
-def select_expiry_date(chain, mode, now):
-    if not chain:
-        return None
-    expiry_strings = chain.get('records', {}).get('expiryDates', [])
-    if not expiry_strings:
-        return None
-    dates = [parse_expiry_date(d) for d in expiry_strings]
-    dates = [d for d in dates if d]
-    if not dates:
-        return expiry_strings[0]
-
-    if mode == 'weekly' or mode == 'intraday':
-        days_until_thu = (THURSDAY - now.weekday()) % 7
-        if days_until_thu == 0:
-            days_until_thu = 7
-        target = (now + timedelta(days=days_until_thu)).date()
-    elif mode == 'monthly':
-        y, m = now.year, now.month
-        last = monthrange(y, m)[1]
-        d = datetime(y, m, last).date()
-        while d.weekday() != THURSDAY:
-            d -= timedelta(days=1)
-        target = d
-        if now.date() > target:
-            if m == 12:
-                y += 1
-                m = 1
-            else:
-                m += 1
-            last = monthrange(y, m)[1]
-            d = datetime(y, m, last).date()
-            while d.weekday() != THURSDAY:
-                d -= timedelta(days=1)
-            target = d
-    else:
-        target = dates[0]
-
-    for d in dates:
-        if d >= target:
-            return d.strftime("%d-%b-%Y")
-    return dates[-1].strftime("%d-%b-%Y")
-
-def get_option_ltp(chain, expiry_date_str, strike, opt_type):
-    try:
-        for rec in chain['records']['data']:
-            if rec['expiryDate'] == expiry_date_str and int(rec['strikePrice']) == int(strike):
-                if opt_type == 'CE':
-                    return float(rec['CE']['lastPrice'])
-                else:
-                    return float(rec['PE']['lastPrice'])
-        return None
-    except Exception as e:
-        print(f"Option LTP error: {e}")
-        return None
-
-def get_oi_iv(chain, expiry_date_str, strike, opt_type):
-    try:
-        for rec in chain['records']['data']:
-            if rec['expiryDate'] == expiry_date_str and int(rec['strikePrice']) == int(strike):
-                if opt_type == 'CE':
-                    return int(rec['CE'].get('openInterest', 0)), float(rec['CE'].get('impliedVolatility', 0))
-                else:
-                    return int(rec['PE'].get('openInterest', 0)), float(rec['PE'].get('impliedVolatility', 0))
-    except Exception:
-        pass
-    return 0, 0.0
-
-# ---------- हिस्टोरिकल कैंडल डेटा ----------
 def fetch_candles(timeframe, period_days):
     interval_map = {'15m': '15m', '30m': '30m', '1h': '1h', '1d': '1d'}
     interval = interval_map.get(timeframe, '1h')
@@ -133,8 +50,8 @@ def fetch_candles(timeframe, period_days):
         return None
     if isinstance(df.columns, pd.MultiIndex):
         df.columns = df.columns.get_level_values(0)
-    df = df[['Open', 'High', 'Low', 'Close', 'Volume']].dropna()
-    df.columns = ['open', 'high', 'low', 'close', 'volume']
+    df = df[['Open','High','Low','Close','Volume']].dropna()
+    df.columns = ['open','high','low','close','volume']
     df.index = pd.to_datetime(df.index)
     if df.index.tz is None:
         df.index = df.index.tz_localize(IST)
@@ -161,21 +78,35 @@ def calculate_indicators(df, rsi_type='ewm'):
 
     rs = avg_gain / avg_loss
     df['rsi'] = 100 - (100 / (1 + rs))
-
     df['macd_above'] = df['macd'] > df['signal']
     df['cross_up'] = df['macd_above'] & ~df['macd_above'].shift(1).fillna(False)
     df['cross_down'] = (~df['macd_above']) & df['macd_above'].shift(1).fillna(False)
     return df
 
+def get_atm_strike(spot, step=50):
+    return int(round(spot / step) * step)
+
+def get_option_symbol(expiry_date_str, strike, opt_type):
+    # Expiry format: '28AUG2026' -> '26AUG28'
+    try:
+        dt_obj = datetime.strptime(expiry_date_str, "%d-%b-%Y")
+        exp_format = dt_obj.strftime("%y%m%d")
+    except Exception:
+        # पहले से सही format मान लें
+        exp_format = expiry_date_str
+    return f"NIFTY{exp_format}{strike}{opt_type}"
+
 # ---------- मुख्य बॉट ----------
 def run_bot():
-    print("NSE Option Chain data (Proxy) fetch हो रहा है...")
-    chain = get_nse_chain()
-    if not chain:
-        print("NSE data unavailable (proxy fail)")
+    print("Angel One login हो रहा है...")
+    try:
+        smart_obj, jwt_token = angel_login()
+        print("Angel One login successful")
+    except Exception as e:
+        print(f"Login error: {e}")
         return
 
-    spot = get_spot_from_chain(chain)
+    spot = get_spot()
     if spot is None:
         print("Spot price unavailable")
         return
@@ -183,6 +114,7 @@ def run_bot():
 
     now = datetime.now(IST)
 
+    # पुरानी स्थितियाँ लोड करें
     try:
         with open('trades.json') as f:
             trades = json.load(f)
@@ -226,11 +158,37 @@ def run_bot():
         lot_size = strat['lot_size']
         use_macd_exit = strat.get('use_macd_exit', False)
 
-        expiry_date_str = select_expiry_date(chain, exit_mode, now)
-        if expiry_date_str is None:
-            print(f"{name}: expiry not available")
-            continue
+        # एक्सपायरी तय करें
+        if exit_mode == 'intraday':
+            expiry_dt = now.replace(hour=15, minute=15, second=0, microsecond=0)
+            if expiry_dt <= now:
+                expiry_dt += timedelta(days=1)
+            expiry_date_str = expiry_dt.strftime("%d-%b-%Y")
+        elif exit_mode == 'weekly':
+            days_until_thu = (THURSDAY - now.weekday()) % 7
+            if days_until_thu == 0:
+                days_until_thu = 7
+            expiry_dt = now + timedelta(days=days_until_thu)
+            expiry_date_str = expiry_dt.strftime("%d-%b-%Y")
+        else:  # monthly
+            y, m = now.year, now.month
+            last = monthrange(y, m)[1]
+            d = datetime(y, m, last)
+            while d.weekday() != THURSDAY:
+                d -= timedelta(days=1)
+            if now.date() > d.date():
+                if m == 12:
+                    y += 1
+                    m = 1
+                else:
+                    m += 1
+                last = monthrange(y, m)[1]
+                d = datetime(y, m, last)
+                while d.weekday() != THURSDAY:
+                    d -= timedelta(days=1)
+            expiry_date_str = d.strftime("%d-%b-%Y")
 
+        # क्या इस रणनीति की कोई खुली पोज़ीशन है?
         open_pos = None
         for pos in open_positions:
             if pos['strategy'] == name:
@@ -238,28 +196,32 @@ def run_bot():
                 break
 
         if open_pos:
+            # ---------- एग्जिट जाँच ----------
             opt_type = 'CE' if open_pos['type'] == 'CALL' else 'PE'
-            exit_premium = get_option_ltp(chain, open_pos['expiry_date'], open_pos['strike'], opt_type)
-            if exit_premium is None:
-                print(f"{name}: option ltp not available, exit skipped")
+            option_symbol = get_option_symbol(open_pos['expiry_date'], open_pos['strike'], opt_type)
+            try:
+                ltp_res = smart_obj.ltp("NFO", option_symbol, "")
+                exit_premium = float(ltp_res['data']['ltp'])
+            except Exception as e:
+                print(f"{name}: LTP fetch error: {e}")
                 continue
 
             exit_triggered = False
             exit_reason = ''
 
+            # समय-सीमा एग्जिट
             if exit_mode == 'intraday':
-                day_end = now.replace(hour=15, minute=15, second=0, microsecond=0)
-                if now >= day_end:
+                if now >= open_pos['expiry_dt']:
                     exit_triggered = True
                     exit_reason = 'Intraday Exit'
             else:
-                expiry_d = parse_expiry_date(open_pos['expiry_date'])
-                if expiry_d:
-                    market_close = dt_time(15, 15)
-                    if now.date() > expiry_d or (now.date() == expiry_d and now.time() >= market_close):
-                        exit_triggered = True
-                        exit_reason = f'{exit_mode.capitalize()} Exit'
+                expiry_d = datetime.strptime(open_pos['expiry_date'], "%d-%b-%Y").date()
+                market_close = dt_time(15, 15)
+                if now.date() > expiry_d or (now.date() == expiry_d and now.time() >= market_close):
+                    exit_triggered = True
+                    exit_reason = f'{exit_mode.capitalize()} Exit'
 
+            # MACD विपरीत क्रॉस (केवल डेली SMA)
             if not exit_triggered and use_macd_exit:
                 if len(df) >= 2:
                     last_cross_down = bool(df['cross_down'].iloc[-2])
@@ -271,6 +233,7 @@ def run_bot():
                         exit_triggered = True
                         exit_reason = 'MACD Cross Up'
 
+            # ट्रेलिंग SL एक्टिवेशन और अपडेट
             if not exit_triggered:
                 if not open_pos['trail_active']:
                     if open_pos['type'] == 'CALL' and spot >= open_pos['entry_spot'] * (1 + trail_pct / 100):
@@ -290,6 +253,7 @@ def run_bot():
                         if new_sl < open_pos['sl']:
                             open_pos['sl'] = new_sl
 
+                # SL हिट चेक
                 if open_pos['type'] == 'CALL' and spot <= open_pos['sl']:
                     exit_triggered = True
                     exit_reason = 'SL Hit'
@@ -313,6 +277,7 @@ def run_bot():
                 open_positions = [p for p in open_positions if p['strategy'] != name]
                 print(f"{name}: {exit_reason} | P&L: {pnl:.2f}")
         else:
+            # ---------- नया सिग्नल ----------
             if len(df) >= 3:
                 signal_bar = df.iloc[-2]
                 trade_type = None
@@ -328,23 +293,26 @@ def run_bot():
                 if trade_type:
                     strike = get_atm_strike(spot)
                     opt_type = 'CE' if trade_type == 'CALL' else 'PE'
-                    entry_premium = get_option_ltp(chain, expiry_date_str, strike, opt_type)
-                    if entry_premium:
-                        oi, iv = get_oi_iv(chain, expiry_date_str, strike, opt_type)
-                        open_positions.append({
-                            'strategy': name,
-                            'type': trade_type,
-                            'strike': strike,
-                            'entry_spot': spot,
-                            'entry_premium': entry_premium,
-                            'sl': sl,
-                            'trail_active': False,
-                            'entry_time': str(now),
-                            'expiry_date': expiry_date_str,
-                            'oi_at_entry': oi,
-                            'iv_at_entry': iv
-                        })
-                        print(f"{name}: Entered {trade_type} at premium {entry_premium}, SL: {sl}")
+                    option_symbol = get_option_symbol(expiry_date_str, strike, opt_type)
+                    try:
+                        ltp_res = smart_obj.ltp("NFO", option_symbol, "")
+                        entry_premium = float(ltp_res['data']['ltp'])
+                    except Exception as e:
+                        print(f"{name}: LTP fetch error: {e}")
+                        continue
+
+                    open_positions.append({
+                        'strategy': name,
+                        'type': trade_type,
+                        'strike': strike,
+                        'entry_spot': spot,
+                        'entry_premium': entry_premium,
+                        'sl': sl,
+                        'trail_active': False,
+                        'entry_time': str(now),
+                        'expiry_date': expiry_date_str,
+                    })
+                    print(f"{name}: Entered {trade_type} at premium {entry_premium}, SL: {sl}")
 
     with open('trades.json', 'w') as f:
         json.dump(trades, f, indent=2)
