@@ -1,4 +1,4 @@
-import os
+        import os
 import json
 import math
 from datetime import datetime, timedelta, time as dt_time
@@ -11,29 +11,33 @@ import requests
 
 IST = pytz.timezone('Asia/Kolkata')
 
-# ---------- NSE Option Chain ----------
+# ---------- NSE Option Chain via CORS Proxy ----------
 def get_nse_chain():
-    try:
-        url = "https://www.nseindia.com/api/option-chain-indices?symbol=NIFTY"
-        headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-            "Accept": "application/json, text/plain, */*",
-            "Accept-Language": "en-US,en;q=0.9",
-            "Referer": "https://www.nseindia.com/option-chain",
-            "Connection": "keep-alive",
-        }
-        session = requests.Session()
-        # पहले NSE homepage पर जाकर cookies लें
-        session.get("https://www.nseindia.com", headers=headers, timeout=10)
-        r = session.get(url, headers=headers, timeout=10)
-        if r.status_code == 200:
-            return r.json()
-        else:
-            print(f"NSE status code: {r.status_code}")
-            return None
-    except Exception as e:
-        print(f"NSE chain fetch error: {e}")
-        return None
+    nse_url = "https://www.nseindia.com/api/option-chain-indices?symbol=NIFTY"
+    proxies = [
+        f"https://api.allorigins.win/raw?url={nse_url}",
+        f"https://corsproxy.io/?url={nse_url}",
+        f"https://thingproxy.freeboard.io/fetch/{nse_url}"
+    ]
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+        "Accept": "application/json, text/plain, */*",
+    }
+
+    for proxy_url in proxies:
+        try:
+            r = requests.get(proxy_url, headers=headers, timeout=15)
+            if r.status_code == 200:
+                data = r.json()
+                if data and 'records' in data:
+                    return data
+                else:
+                    print(f"Proxy {proxy_url} returned invalid data")
+            else:
+                print(f"Proxy {proxy_url} status: {r.status_code}")
+        except Exception as e:
+            print(f"Proxy {proxy_url} error: {e}")
+    return None
 
 def get_spot_from_chain(chain):
     try:
@@ -62,13 +66,11 @@ def select_expiry_date(chain, mode, now):
         return expiry_strings[0]
 
     if mode == 'weekly' or mode == 'intraday':
-        # अगला गुरुवार
         days_until_thu = (THURSDAY - now.weekday()) % 7
         if days_until_thu == 0:
             days_until_thu = 7
         target = (now + timedelta(days=days_until_thu)).date()
     elif mode == 'monthly':
-        # महीने का आखिरी गुरुवार
         y, m = now.year, now.month
         last = monthrange(y, m)[1]
         d = datetime(y, m, last).date()
@@ -167,10 +169,10 @@ def calculate_indicators(df, rsi_type='ewm'):
 
 # ---------- मुख्य बॉट ----------
 def run_bot():
-    print("NSE Option Chain data fetch हो रहा है...")
+    print("NSE Option Chain data (Proxy) fetch हो रहा है...")
     chain = get_nse_chain()
     if not chain:
-        print("NSE data unavailable")
+        print("NSE data unavailable (proxy fail)")
         return
 
     spot = get_spot_from_chain(chain)
@@ -181,7 +183,6 @@ def run_bot():
 
     now = datetime.now(IST)
 
-    # पुरानी स्थितियाँ लोड करें
     try:
         with open('trades.json') as f:
             trades = json.load(f)
@@ -209,7 +210,6 @@ def run_bot():
             period_days = int(period_raw.replace('y', '')) * 365
         else:
             period_days = int(period_raw.replace('d', ''))
-        # yfinance limits
         if timeframe in ['15m', '30m']:
             period_days = min(period_days, 59)
 
@@ -231,7 +231,6 @@ def run_bot():
             print(f"{name}: expiry not available")
             continue
 
-        # क्या इस रणनीति की कोई खुली पोज़ीशन है?
         open_pos = None
         for pos in open_positions:
             if pos['strategy'] == name:
@@ -239,7 +238,6 @@ def run_bot():
                 break
 
         if open_pos:
-            # ---------- एग्जिट जाँच ----------
             opt_type = 'CE' if open_pos['type'] == 'CALL' else 'PE'
             exit_premium = get_option_ltp(chain, open_pos['expiry_date'], open_pos['strike'], opt_type)
             if exit_premium is None:
@@ -249,7 +247,6 @@ def run_bot():
             exit_triggered = False
             exit_reason = ''
 
-            # समय-सीमा एग्जिट
             if exit_mode == 'intraday':
                 day_end = now.replace(hour=15, minute=15, second=0, microsecond=0)
                 if now >= day_end:
@@ -263,7 +260,6 @@ def run_bot():
                         exit_triggered = True
                         exit_reason = f'{exit_mode.capitalize()} Exit'
 
-            # MACD विपरीत क्रॉस (केवल डेली SMA)
             if not exit_triggered and use_macd_exit:
                 if len(df) >= 2:
                     last_cross_down = bool(df['cross_down'].iloc[-2])
@@ -275,7 +271,6 @@ def run_bot():
                         exit_triggered = True
                         exit_reason = 'MACD Cross Up'
 
-            # ट्रेलिंग SL एक्टिवेशन
             if not exit_triggered:
                 if not open_pos['trail_active']:
                     if open_pos['type'] == 'CALL' and spot >= open_pos['entry_spot'] * (1 + trail_pct / 100):
@@ -283,7 +278,6 @@ def run_bot():
                     elif open_pos['type'] == 'PUT' and spot <= open_pos['entry_spot'] * (1 - trail_pct / 100):
                         open_pos['trail_active'] = True
 
-                # SL अपडेट
                 if open_pos['trail_active'] and len(df) >= 3:
                     prev1 = df.iloc[-2]
                     prev2 = df.iloc[-3]
@@ -296,7 +290,6 @@ def run_bot():
                         if new_sl < open_pos['sl']:
                             open_pos['sl'] = new_sl
 
-                # SL हिट चेक
                 if open_pos['type'] == 'CALL' and spot <= open_pos['sl']:
                     exit_triggered = True
                     exit_reason = 'SL Hit'
@@ -317,11 +310,9 @@ def run_bot():
                     'exit_reason': exit_reason,
                     'pnl': round(pnl, 2)
                 })
-                # पोज़ीशन हटाएँ
                 open_positions = [p for p in open_positions if p['strategy'] != name]
                 print(f"{name}: {exit_reason} | P&L: {pnl:.2f}")
         else:
-            # ---------- नया सिग्नल ----------
             if len(df) >= 3:
                 signal_bar = df.iloc[-2]
                 trade_type = None
@@ -355,7 +346,6 @@ def run_bot():
                         })
                         print(f"{name}: Entered {trade_type} at premium {entry_premium}, SL: {sl}")
 
-    # फाइलों में सेव करें
     with open('trades.json', 'w') as f:
         json.dump(trades, f, indent=2)
     with open('open_positions.json', 'w') as f:
