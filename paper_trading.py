@@ -7,7 +7,7 @@ import pytz
 import pandas as pd
 import numpy as np
 import yfinance as yf
-from nsepython import nsefetch
+import requests
 
 IST = pytz.timezone('Asia/Kolkata')
 
@@ -15,7 +15,22 @@ IST = pytz.timezone('Asia/Kolkata')
 def get_nse_chain():
     try:
         url = "https://www.nseindia.com/api/option-chain-indices?symbol=NIFTY"
-        return nsefetch(url)
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+            "Accept": "application/json, text/plain, */*",
+            "Accept-Language": "en-US,en;q=0.9",
+            "Referer": "https://www.nseindia.com/option-chain",
+            "Connection": "keep-alive",
+        }
+        session = requests.Session()
+        # पहले NSE homepage पर जाकर cookies लें
+        session.get("https://www.nseindia.com", headers=headers, timeout=10)
+        r = session.get(url, headers=headers, timeout=10)
+        if r.status_code == 200:
+            return r.json()
+        else:
+            print(f"NSE status code: {r.status_code}")
+            return None
     except Exception as e:
         print(f"NSE chain fetch error: {e}")
         return None
@@ -309,7 +324,6 @@ def run_bot():
             # ---------- नया सिग्नल ----------
             if len(df) >= 3:
                 signal_bar = df.iloc[-2]
-                current_bar = df.iloc[-1]
                 trade_type = None
                 sl = 0.0
 
