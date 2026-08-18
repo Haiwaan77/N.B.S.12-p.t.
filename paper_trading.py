@@ -6,9 +6,13 @@ import pandas as pd
 import numpy as np
 import yfinance as yf
 import pyotp
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, time as dt_time
 from calendar import monthrange, THURSDAY
-from smartapi import SmartConnect
+
+try:
+    from SmartApi import SmartConnect
+except ImportError:
+    from smartapi import SmartConnect
 
 IST = pytz.timezone('Asia/Kolkata')
 
@@ -27,7 +31,7 @@ def angel_login():
     else:
         raise Exception("Angel Login Failed")
 
-# ---------- yfinance से स्पॉट और कैंडल्स ----------
+# ---------- yfinance से स्पॉट प्राइस ----------
 def get_spot():
     try:
         df = yf.download('^NSEI', period='1d', interval='1m', auto_adjust=True, progress=False)
@@ -39,6 +43,7 @@ def get_spot():
         print(f"Spot error: {e}")
     return None
 
+# ---------- हिस्टोरिकल कैंडल्स ----------
 def fetch_candles(timeframe, period_days):
     interval_map = {'15m': '15m', '30m': '30m', '1h': '1h', '1d': '1d'}
     interval = interval_map.get(timeframe, '1h')
@@ -59,6 +64,7 @@ def fetch_candles(timeframe, period_days):
         df.index = df.index.tz_convert(IST)
     return df
 
+# ---------- MACD और RSI ----------
 def calculate_indicators(df, rsi_type='ewm'):
     ema12 = df['close'].ewm(span=12, adjust=False).mean()
     ema26 = df['close'].ewm(span=26, adjust=False).mean()
@@ -83,16 +89,18 @@ def calculate_indicators(df, rsi_type='ewm'):
     df['cross_down'] = (~df['macd_above']) & df['macd_above'].shift(1).fillna(False)
     return df
 
+# ---------- ATM स्ट्राइक ----------
 def get_atm_strike(spot, step=50):
     return int(round(spot / step) * step)
 
+# ---------- ऑप्शन सिंबल बनाना ----------
 def get_option_symbol(expiry_date_str, strike, opt_type):
-    # Expiry format: '28AUG2026' -> '26AUG28'
+    # expiry_date_str जैसे '28-Aug-2026' -> '26AUG28'
     try:
         dt_obj = datetime.strptime(expiry_date_str, "%d-%b-%Y")
         exp_format = dt_obj.strftime("%y%m%d")
     except Exception:
-        # पहले से सही format मान लें
+        # अगर पहले से ही '26AUG28' जैसा है तो use करें
         exp_format = expiry_date_str
     return f"NIFTY{exp_format}{strike}{opt_type}"
 
@@ -314,6 +322,7 @@ def run_bot():
                     })
                     print(f"{name}: Entered {trade_type} at premium {entry_premium}, SL: {sl}")
 
+    # फाइलें सेव करें
     with open('trades.json', 'w') as f:
         json.dump(trades, f, indent=2)
     with open('open_positions.json', 'w') as f:
