@@ -16,7 +16,7 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install smartapi-python pandas numpy pytz requests logzero pyotp
+          pip install smartapi-python pandas numpy pytz requests logzero pyotp yfinance
       - name: Run bot
         env:
           ANGEL_API_KEY: ${{ secrets.ANGEL_API_KEY }}
@@ -24,4 +24,3 @@ jobs:
           ANGEL_PASSWORD: ${{ secrets.ANGEL_PASSWORD }}
           ANGEL_TOTP_SECRET: ${{ secrets.ANGEL_TOTP_SECRET }}
         run: python paper_trading.py
-  
