@@ -156,6 +156,13 @@ def run_bot():
             continue
         df = calculate_indicators(df, strat['rsi_type'])
 
+        # -------- डिबग प्रिंट (नई लाइन) --------
+        if len(df) >= 2:
+            last_rsi = df['rsi'].iloc[-2]
+            last_cross_up = bool(df['cross_up'].iloc[-2])
+            last_cross_down = bool(df['cross_down'].iloc[-2])
+            print(f"DEBUG {name}: RSI={last_rsi:.2f} | CrossUp={last_cross_up} | CrossDown={last_cross_down}")
+
         exit_mode = strat['exit_mode']
         rsi_above = strat['rsi_cross_above']
         rsi_below = strat['rsi_cross_below']
@@ -201,7 +208,6 @@ def run_bot():
                 break
 
         if open_pos:
-            # ---------- एग्जिट जाँच ----------
             opt_type = 'CE' if open_pos['type'] == 'CALL' else 'PE'
             option_symbol = get_option_symbol(open_pos['expiry_date'], open_pos['strike'], opt_type)
             try:
@@ -215,7 +221,6 @@ def run_bot():
             exit_reason = ''
             sl_type = None
 
-            # समय-सीमा एग्जिट
             if exit_mode == 'intraday':
                 if now >= open_pos['expiry_dt']:
                     exit_triggered = True
@@ -227,7 +232,6 @@ def run_bot():
                     exit_triggered = True
                     exit_reason = f'{exit_mode.capitalize()} Exit'
 
-            # MACD विपरीत क्रॉस
             if not exit_triggered and use_macd_exit:
                 if len(df) >= 2:
                     last_cross_down = bool(df['cross_down'].iloc[-2])
@@ -239,7 +243,6 @@ def run_bot():
                         exit_triggered = True
                         exit_reason = 'MACD Cross Up'
 
-            # ट्रेलिंग SL एक्टिवेशन और अपडेट
             if not exit_triggered:
                 if not open_pos['trail_active']:
                     if open_pos['type'] == 'CALL' and spot >= open_pos['entry_spot'] * (1 + trail_pct / 100):
@@ -259,7 +262,6 @@ def run_bot():
                         if new_sl < open_pos['sl']:
                             open_pos['sl'] = new_sl
 
-                # SL हिट चेक
                 if open_pos['type'] == 'CALL' and spot <= open_pos['sl']:
                     exit_triggered = True
                     exit_reason = 'SL Hit'
@@ -286,7 +288,6 @@ def run_bot():
                 open_positions = [p for p in open_positions if p['strategy'] != name]
                 print(f"{name}: {exit_reason} ({sl_type}) | P&L: {pnl:.2f}")
         else:
-            # ---------- नया सिग्नल ----------
             if len(df) >= 3:
                 signal_bar = df.iloc[-2]
                 trade_type = None
