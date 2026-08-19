@@ -14,14 +14,14 @@ try:
 except Exception:
     open_positions = []
 
-now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+# सभी strategies हमेशा दिखाने के लिए strategies.json लोड करें
+try:
+    with open('strategies.json') as f:
+        all_strategies = json.load(f)
+except Exception:
+    all_strategies = []
 
-# सभी strategy निकालें
-strategies = set()
-for t in trades:
-    strategies.add(t.get('strategy', 'Unknown'))
-for p in open_positions:
-    strategies.add(p.get('strategy', 'Unknown'))
+now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
 
 # ---------- HTML शुरू ----------
 html = f"""<!DOCTYPE html>
@@ -48,10 +48,11 @@ html = f"""<!DOCTYPE html>
 <p>Generated at: {now}</p>
 """
 
-# ---------- हर strategy के लिए ----------
-for strat in sorted(strategies):
-    strat_trades = [t for t in trades if t.get('strategy') == strat]
-    strat_open = [p for p in open_positions if p.get('strategy') == strat]
+# ---------- हर strategy के लिए (चाहे उसमें data हो या न हो) ----------
+for strat in all_strategies:
+    strat_name = strat.get('name', 'Unknown')
+    strat_trades = [t for t in trades if t.get('strategy') == strat_name]
+    strat_open = [p for p in open_positions if p.get('strategy') == strat_name]
 
     total_closed = len(strat_trades)
     total_open = len(strat_open)
@@ -59,7 +60,7 @@ for strat in sorted(strategies):
     total_pnl = sum(t.get('pnl', 0) for t in strat_trades)
     win_rate = (win_count / total_closed * 100) if total_closed > 0 else 0
 
-    html += f"<div class='strategy'><h2>{strat}</h2>"
+    html += f"<div class='strategy'><h2>{strat_name}</h2>"
     html += "<div class='summary'>"
     html += f"<b>Total Orders:</b> {total_closed + total_open} &nbsp;|&nbsp; "
     html += f"<b>Open Orders:</b> {total_open} &nbsp;|&nbsp; "
