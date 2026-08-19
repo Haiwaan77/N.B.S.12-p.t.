@@ -1,138 +1,99 @@
 import json
 from datetime import datetime
 
-# ---------- डेटा लोड ----------
+# डेटा लोड
 try:
     with open('trades.json') as f:
         trades = json.load(f)
-except Exception:
+except:
     trades = []
-
 try:
     with open('open_positions.json') as f:
         open_positions = json.load(f)
-except Exception:
+except:
     open_positions = []
-
-# सभी strategies हमेशा दिखाने के लिए strategies.json लोड करें
 try:
     with open('strategies.json') as f:
         all_strategies = json.load(f)
-except Exception:
+except:
     all_strategies = []
 
 now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
 
-# ---------- HTML शुरू ----------
-html = f"""<!DOCTYPE html>
-<html>
-<head>
-    <title>Paper Trading Report</title>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <style>
-        body {{ font-family: Arial, sans-serif; margin: 10px; background: #fafafa; }}
-        h1 {{ color: #2c3e50; }}
-        .strategy {{ border: 1px solid #ddd; border-radius: 8px; margin-bottom: 20px; padding: 10px; background: #fff; }}
-        .summary {{ background: #f0f4f8; padding: 10px; border-radius: 5px; margin-bottom: 10px; }}
-        table {{ width: 100%; border-collapse: collapse; margin-bottom: 15px; font-size: 13px; }}
-        th, td {{ padding: 6px; border-bottom: 1px solid #ddd; text-align: left; }}
-        th {{ background: #e0e0e0; }}
-        .profit {{ color: green; font-weight: bold; }}
-        .loss {{ color: red; font-weight: bold; }}
-        h3 {{ margin: 10px 0 5px 0; color: #34495e; }}
-    </style>
-</head>
-<body>
-<h1>📊 Paper Trading Report</h1>
-<p>Generated at: {now}</p>
-"""
+lines = []
+lines.append("# 📊 Paper Trading Report")
+lines.append(f"Generated at: {now}\n")
 
-# ---------- हर strategy के लिए (चाहे उसमें data हो या न हो) ----------
 for strat in all_strategies:
-    strat_name = strat.get('name', 'Unknown')
-    strat_trades = [t for t in trades if t.get('strategy') == strat_name]
-    strat_open = [p for p in open_positions if p.get('strategy') == strat_name]
+    name = strat.get('name', 'Unknown')
+    s_trades = [t for t in trades if t.get('strategy') == name]
+    s_open = [p for p in open_positions if p.get('strategy') == name]
 
-    total_closed = len(strat_trades)
-    total_open = len(strat_open)
-    win_count = sum(1 for t in strat_trades if t.get('pnl', 0) > 0)
-    total_pnl = sum(t.get('pnl', 0) for t in strat_trades)
-    win_rate = (win_count / total_closed * 100) if total_closed > 0 else 0
+    total_closed = len(s_trades)
+    total_open = len(s_open)
+    total_pnl = sum(t.get('pnl', 0) for t in s_trades)
+    wins = sum(1 for t in s_trades if t.get('pnl', 0) > 0)
+    win_rate = (wins / total_closed * 100) if total_closed > 0 else 0
 
-    html += f"<div class='strategy'><h2>{strat_name}</h2>"
-    html += "<div class='summary'>"
-    html += f"<b>Total Orders:</b> {total_closed + total_open} &nbsp;|&nbsp; "
-    html += f"<b>Open Orders:</b> {total_open} &nbsp;|&nbsp; "
-    html += f"<b>Closed Orders:</b> {total_closed} &nbsp;|&nbsp; "
-    html += f"<b>Total P&L:</b> <span class='{'profit' if total_pnl >= 0 else 'loss'}'>{total_pnl:+.2f}</span> &nbsp;|&nbsp; "
-    html += f"<b>Win Rate:</b> {win_rate:.1f}%"
-    html += "</div>"
+    lines.append(f"## {name}")
+    lines.append(f"| Total Orders | Open Orders | Closed Orders | Total P&L (₹) | Win Rate |")
+    lines.append(f"|--------------|-------------|---------------|---------------|----------|")
+    lines.append(f"| {total_closed + total_open} | {total_open} | {total_closed} | {total_pnl:+.2f} | {win_rate:.1f}% |")
+    lines.append("")
 
-    # Open Positions
-    if strat_open:
-        html += "<h3>⏳ Open Positions</h3>"
-        html += "<table><tr><th>Entry Time</th><th>Type</th><th>Strike</th><th>Entry Premium</th><th>SL</th><th>Trailing Active</th></tr>"
-        for p in strat_open:
-            trailing = 'Yes' if p.get('trail_active', False) else 'No'
-            html += f"<tr><td>{p.get('entry_time','')}</td><td>{p.get('type','')}</td><td>{p.get('strike','')}</td><td>{p.get('entry_premium','')}</td><td>{p.get('sl','')}</td><td>{trailing}</td></tr>"
-        html += "</table>"
+    if s_open:
+        lines.append("### ⏳ Open Positions")
+        lines.append("| Entry Time | Type | Strike | Entry Premium | SL | Trailing |")
+        lines.append("|------------|------|--------|---------------|----|----------|")
+        for p in s_open:
+            lines.append(f"| {p.get('entry_time','')} | {p.get('type','')} | {p.get('strike','')} | {p.get('entry_premium','')} | {p.get('sl','')} | {'Yes' if p.get('trail_active') else 'No'} |")
+        lines.append("")
 
-    # Closed Trades
-    if strat_trades:
-        html += "<h3>📄 Closed Trades (All)</h3>"
-        html += "<table><tr><th>Entry</th><th>Exit</th><th>Type</th><th>Entry Prem</th><th>Exit Prem</th><th>P&L</th><th>Exit Reason</th><th>SL Type</th></tr>"
-        for t in strat_trades:
-            sl_type = t.get('sl_type', 'N/A')
-            pnl = t.get('pnl', 0)
-            pnl_class = 'profit' if pnl > 0 else 'loss'
-            html += f"<tr><td>{t.get('entry_time','')}</td><td>{t.get('exit_time','')}</td><td>{t.get('type','')}</td><td>{t.get('entry_premium','')}</td><td>{t.get('exit_premium','')}</td><td class='{pnl_class}'>{pnl:+.2f}</td><td>{t.get('exit_reason','')}</td><td>{sl_type}</td></tr>"
-        html += "</table>"
+    if s_trades:
+        lines.append("### 📄 Closed Trades")
+        lines.append("| Entry | Exit | Type | Entry Prem | Exit Prem | P&L (₹) | Exit Reason | SL Type |")
+        lines.append("|-------|------|------|-----------|-----------|---------|-------------|---------|")
+        for t in s_trades:
+            lines.append(f"| {t.get('entry_time','')} | {t.get('exit_time','')} | {t.get('type','')} | {t.get('entry_premium','')} | {t.get('exit_premium','')} | {t.get('pnl',0):+.2f} | {t.get('exit_reason','')} | {t.get('sl_type','N/A')} |")
+        lines.append("")
 
-        # Profit Trades
-        profit_trades = [t for t in strat_trades if t.get('pnl', 0) > 0]
-        if profit_trades:
-            html += "<h3>✅ Profit Trades</h3>"
-            html += "<table><tr><th>Entry</th><th>Exit</th><th>P&L</th><th>Exit Reason</th></tr>"
-            for t in profit_trades:
-                html += f"<tr><td>{t.get('entry_time','')}</td><td>{t.get('exit_time','')}</td><td class='profit'>{t.get('pnl',0):+.2f}</td><td>{t.get('exit_reason','')}</td></tr>"
-            html += "</table>"
+        profit = [t for t in s_trades if t.get('pnl',0) > 0]
+        if profit:
+            lines.append("### ✅ Profit Trades")
+            lines.append("| Entry | Exit | P&L (₹) | Exit Reason |")
+            lines.append("|-------|------|---------|-------------|")
+            for t in profit:
+                lines.append(f"| {t.get('entry_time','')} | {t.get('exit_time','')} | {t.get('pnl',0):+.2f} | {t.get('exit_reason','')} |")
+            lines.append("")
 
-        # Initial SL Hit Trades
-        initial_sl = [t for t in strat_trades if t.get('exit_reason') == 'SL Hit' and t.get('sl_type') == 'initial']
-        if initial_sl:
-            html += "<h3>🛑 Initial SL Hit Trades</h3>"
-            html += "<table><tr><th>Entry</th><th>Exit</th><th>P&L</th></tr>"
-            for t in initial_sl:
-                html += f"<tr><td>{t.get('entry_time','')}</td><td>{t.get('exit_time','')}</td><td class='loss'>{t.get('pnl',0):+.2f}</td></tr>"
-            html += "</table>"
+        init_sl = [t for t in s_trades if t.get('exit_reason') == 'SL Hit' and t.get('sl_type') == 'initial']
+        if init_sl:
+            lines.append("### 🛑 Initial SL Hit")
+            lines.append("| Entry | Exit | P&L (₹) |")
+            lines.append("|-------|------|---------|")
+            for t in init_sl:
+                lines.append(f"| {t.get('entry_time','')} | {t.get('exit_time','')} | {t.get('pnl',0):+.2f} |")
+            lines.append("")
 
-        # Trailing SL Hit Trades
-        trailing_sl = [t for t in strat_trades if t.get('exit_reason') == 'SL Hit' and t.get('sl_type') == 'trailing']
-        if trailing_sl:
-            html += "<h3>🔁 Trailing SL Hit Trades</h3>"
-            html += "<table><tr><th>Entry</th><th>Exit</th><th>P&L</th></tr>"
-            for t in trailing_sl:
-                pnl = t.get('pnl', 0)
-                pnl_class = 'profit' if pnl >= 0 else 'loss'
-                html += f"<tr><td>{t.get('entry_time','')}</td><td>{t.get('exit_time','')}</td><td class='{pnl_class}'>{pnl:+.2f}</td></tr>"
-            html += "</table>"
+        tr_sl = [t for t in s_trades if t.get('exit_reason') == 'SL Hit' and t.get('sl_type') == 'trailing']
+        if tr_sl:
+            lines.append("### 🔁 Trailing SL Hit")
+            lines.append("| Entry | Exit | P&L (₹) |")
+            lines.append("|-------|------|---------|")
+            for t in tr_sl:
+                lines.append(f"| {t.get('entry_time','')} | {t.get('exit_time','')} | {t.get('pnl',0):+.2f} |")
+            lines.append("")
 
-        # Loss Trades (all negative)
-        loss_trades = [t for t in strat_trades if t.get('pnl', 0) <= 0]
-        if loss_trades:
-            html += "<h3>❌ Loss Trades</h3>"
-            html += "<table><tr><th>Entry</th><th>Exit</th><th>P&L</th><th>Exit Reason</th></tr>"
-            for t in loss_trades:
-                html += f"<tr><td>{t.get('entry_time','')}</td><td>{t.get('exit_time','')}</td><td class='loss'>{t.get('pnl',0):+.2f}</td><td>{t.get('exit_reason','')}</td></tr>"
-            html += "</table>"
+        loss = [t for t in s_trades if t.get('pnl',0) <= 0]
+        if loss:
+            lines.append("### ❌ Loss Trades")
+            lines.append("| Entry | Exit | P&L (₹) | Exit Reason |")
+            lines.append("|-------|------|---------|-------------|")
+            for t in loss:
+                lines.append(f"| {t.get('entry_time','')} | {t.get('exit_time','')} | {t.get('pnl',0):+.2f} | {t.get('exit_reason','')} |")
+            lines.append("")
 
-    html += "</div>"
+with open('report.md', 'w') as f:
+    f.write("\n".join(lines))
 
-html += "</body></html>"
-
-# ---------- रिपोर्ट फाइल लिखें ----------
-with open('report.html', 'w') as f:
-    f.write(html)
-
-print("Report generated: report.html")
+print("Markdown report generated: report.md")
