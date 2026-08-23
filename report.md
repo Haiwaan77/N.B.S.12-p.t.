@@ -1,5 +1,5 @@
 # 📊 Paper Trading Report
-Generated at: 2026-08-23 17:20:39
+Generated at: 2026-08-23 17:25:32
 
 ## 15m_intraday_ewm
 | Total Orders | Open Orders | Closed Orders | Total P&L (₹) | Win Rate |
